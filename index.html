@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>국내 ETF 수급 대시보드</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --card-hover: #222633;
+    --border: #2a2e3d;
+    --text: #e4e6ed;
+    --text-dim: #8b8fa3;
+    --accent: #6c8cff;
+    --up: #ff4d6a;
+    --down: #4da3ff;
+    --green: #2dd4a0;
+    --orange: #ff9f43;
+
+    --sector-market: #6c8cff;
+    --sector-semi: #a855f7;
+    --sector-ai-power: #f59e0b;
+    --sector-battery: #10b981;
+    --sector-bio: #ec4899;
+    --sector-defense: #64748b;
+    --sector-auto: #8b5cf6;
+    --sector-finance: #3b82f6;
+    --sector-dividend: #14b8a6;
+    --sector-consumer: #f472b6;
+    --sector-energy: #ef4444;
+    --sector-other: #94a3b8;
+    --sector-leverage: #ff6b6b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  .dashboard {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #6c8cff, #a855f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .header-meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .market-badge {
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .market-badge.kospi { background: rgba(255,77,106,0.15); color: var(--up); }
+  .market-badge.kosdaq { background: rgba(77,163,255,0.15); color: var(--down); }
+  .date-badge {
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: rgba(108,140,255,0.15);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* Archive controls */
+  .archive-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .archive-bar select, .archive-bar button {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .archive-bar button:hover { background: var(--card-hover); }
+  .archive-bar button.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* Summary strip */
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .summary-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .summary-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .summary-card.inflow::before { background: linear-gradient(90deg, #2dd4a0, #10b981); }
+  .summary-card.outflow::before { background: linear-gradient(90deg, #ff4d6a, #ef4444); }
+  .summary-card.neutral::before { background: linear-gradient(90deg, #6c8cff, #a855f7); }
+  .summary-card .label { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .summary-card .value { font-size: 22px; font-weight: 700; }
+  .summary-card .sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+  /* Tabs */
+  .tab-nav {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tab-btn {
+    padding: 10px 18px;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: all .2s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Sector legend */
+  .sector-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .sector-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+    border: 1px solid transparent;
+  }
+  .sector-chip:hover { border-color: rgba(255,255,255,0.2); }
+  .sector-chip.active { border-color: rgba(255,255,255,0.5); }
+  .sector-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  /* ETF Table */
+  .etf-table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+  .etf-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .etf-table thead th {
+    background: var(--card);
+    padding: 12px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    cursor: pointer;
+    user-select: none;
+  }
+  .etf-table thead th:hover { color: var(--text); }
+  .etf-table thead th .sort-arrow { font-size: 10px; margin-left: 4px; opacity: 0.5; }
+  .etf-table tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+  }
+  .etf-table tbody tr:hover { background: var(--card-hover); }
+  .etf-table td {
+    padding: 10px 14px;
+    white-space: nowrap;
+  }
+  .etf-name {
+    font-weight: 600;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Sector tag */
+  .sector-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* Flow bar */
+  .flow-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 160px;
+  }
+  .flow-bar {
+    height: 6px;
+    border-radius: 3px;
+    transition: width .5s ease;
+  }
+  .flow-bar.positive { background: linear-gradient(90deg, #2dd4a0, #10b981); }
+  .flow-bar.negative { background: linear-gradient(90deg, #ff4d6a, #ef4444); }
+  .flow-val { font-weight: 600; font-size: 12px; min-width: 80px; }
+  .flow-val.pos { color: var(--up); }
+  .flow-val.neg { color: var(--down); }
+
+  /* Return cells */
+  .ret-pos { color: var(--up); font-weight: 600; }
+  .ret-neg { color: var(--down); font-weight: 600; }
+
+  /* Tooltip */
+  .tooltip-trigger { position: relative; cursor: pointer; }
+  .tooltip-trigger:hover .tooltip-box { display: block; }
+  .tooltip-box {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    background: #2a2e3d;
+    border: 1px solid #3a3f52;
+    border-radius: 10px;
+    padding: 14px;
+    min-width: 280px;
+    z-index: 100;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    pointer-events: none;
+  }
+  .tooltip-box::after {
+    content: '';
+    position: absolute;
+    bottom: 100%; left: 24px;
+    border: 6px solid transparent;
+    border-bottom-color: #3a3f52;
+  }
+  .tooltip-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--accent);
+  }
+  .holding-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-size: 12px;
+  }
+  .holding-bar-bg {
+    flex: 1;
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    margin: 0 8px;
+    position: relative;
+  }
+  .holding-bar-fill {
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%;
+    border-radius: 2px;
+  }
+  .holding-pct { color: var(--text-dim); font-size: 11px; min-width: 40px; text-align: right; }
+
+  /* Sector flow map */
+  .sector-flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .sector-flow-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .2s;
+  }
+  .sector-flow-card:hover { transform: translateY(-2px); }
+  .sector-flow-card .sector-name {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .sector-flow-card .flow-amount {
+    font-size: 20px;
+    font-weight: 800;
+  }
+  .sector-flow-card .flow-detail {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .sector-indicator {
+    position: absolute;
+    top: 0; left: 0;
+    width: 4px;
+    height: 100%;
+  }
+
+  /* Chart section */
+  .chart-container {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 32px;
+  }
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chart-title {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .chart-controls {
+    display: flex;
+    gap: 6px;
+  }
+  .chart-btn {
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .chart-btn.active, .chart-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .chart-canvas-wrap {
+    position: relative;
+    height: 360px;
+  }
+
+  /* Investor flow */
+  .investor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .investor-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .investor-card .inv-name {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .investor-card .inv-amount {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+  .investor-card .inv-detail {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  /* Power box */
+  .spotlight-box {
+    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(239,68,68,0.08));
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 32px;
+  }
+  .spotlight-box h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: var(--sector-ai-power);
+  }
+
+  /* Interpretation card */
+  .interpretation {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+  .interpretation h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .interpretation p {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .interpretation strong { color: var(--text); }
+  .interp-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+
+  /* 3-line summary */
+  .three-summary {
+    background: linear-gradient(135deg, rgba(108,140,255,0.1), rgba(168,85,247,0.1));
+    border: 1px solid rgba(108,140,255,0.3);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+  .three-summary ol {
+    list-style: none;
+    counter-reset: summary;
+  }
+  .three-summary li {
+    counter-increment: summary;
+    padding: 8px 0;
+    font-size: 14px;
+    line-height: 1.7;
+    display: flex;
+    gap: 12px;
+  }
+  .three-summary li::before {
+    content: counter(summary);
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  /* Divergence cards */
+  .divergence-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  @media (max-width: 768px) { .divergence-grid { grid-template-columns: 1fr; } }
+  .divergence-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid var(--border);
+  }
+  .divergence-card h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Risk gauge */
+  .risk-gauge {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 32px;
+  }
+  .gauge-bar {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #2dd4a0, #f59e0b, #ff4d6a, #ef4444);
+    position: relative;
+    margin: 16px 0;
+  }
+  .gauge-marker {
+    position: absolute;
+    top: -6px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: #fff;
+    border: 3px solid var(--up);
+    transform: translateX(-50%);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 768px) {
+    .dashboard { padding: 12px; }
+    .header h1 { font-size: 20px; }
+    .summary-strip { grid-template-columns: repeat(2, 1fr); }
+    .sector-flow-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="dashboard" id="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <h1>국내 ETF 수급 대시보드</h1>
+      <p style="color:var(--text-dim);font-size:13px;margin-top:4px;">ETF별 자금유입·순자산증감·수익률·투자자 수급으로 보는 섹터 자금 이동</p>
+    </div>
+    <div class="header-meta">
+      <span class="date-badge" id="current-date">2026.06.04 (목)</span>
+      <span class="market-badge kospi">KOSPI 8,639 ▼1.84%</span>
+      <span class="market-badge kosdaq" style="background:rgba(45,212,160,0.15);color:var(--green);">KOSDAQ 1,049 ▲2.28%</span>
+    </div>
+  </div>
+
+  <!-- Archive bar -->
+  <div class="archive-bar">
+    <select id="archive-select">
+      <option value="20260604" selected>2026.06.04 (최신)</option>
+      <option value="20260603">2026.06.03</option>
+      <option value="20260602">2026.06.02</option>
+    </select>
+    <button onclick="saveArchive()" class="primary">📥 오늘 데이터 아카이브</button>
+    <button onclick="exportData()">📤 CSV 내보내기</button>
+    <button onclick="showArchiveList()">📁 아카이브 목록</button>
+    <span style="font-size:11px;color:var(--text-dim);margin-left:8px;" id="archive-status"></span>
+  </div>
+
+  <!-- 3줄 요약 -->
+  <div class="three-summary">
+    <ol>
+      <li><span><strong>반도체 ETF 자금 대이동:</strong> SOL AI반도체TOP2플러스에 하루 5,790억원 유입. 범용 반도체 ETF(TIGER 반도체TOP10 -4,484억)에서 특화·단일종목 ETF로 교체 매매 가속.</span></li>
+      <li><span><strong>외국인 19일 연속 순매도, 누적 66조원:</strong> 6/4 하루 약 7조원 매도(역대 2위). 삼성전자·SK하이닉스에서만 54조원. 개인(+5조)·기관(+1.8조)이 방어하나 환율 1,530원 + 중동 리스크 부담.</span></li>
+      <li><span><strong>코스피↔코스닥 디커플링:</strong> 코스피 -1.84% vs 코스닥 +2.28%. 반도체 전공정·소부장 중소형주 강세(+23%). AI소프트웨어(-8.6%)·로봇(-8%) 약세. 전력기기 숨고르기.</span></li>
+    </ol>
+  </div>
+
+  <!-- Summary strip -->
+  <div class="summary-strip">
+    <div class="summary-card inflow">
+      <div class="label">자금유입 1위</div>
+      <div class="value" style="color:var(--up);">+5,790억</div>
+      <div class="sub">SOL AI반도체TOP2플러스</div>
+    </div>
+    <div class="summary-card outflow">
+      <div class="label">자금유출 1위</div>
+      <div class="value" style="color:var(--down);">-6,056억</div>
+      <div class="sub">KODEX 레버리지</div>
+    </div>
+    <div class="summary-card outflow">
+      <div class="label">외국인 순매도</div>
+      <div class="value" style="color:var(--down);">-6.98조</div>
+      <div class="sub">19거래일 연속 (누적 66조)</div>
+    </div>
+    <div class="summary-card inflow">
+      <div class="label">개인 순매수</div>
+      <div class="value" style="color:var(--up);">+5.01조</div>
+      <div class="sub">반도체 레버리지·AI ETF 집중</div>
+    </div>
+    <div class="summary-card neutral">
+      <div class="label">ETF 시장 순자산</div>
+      <div class="value">~500조+</div>
+      <div class="sub">5/27 500조 돌파 이후 지속 성장</div>
+    </div>
+    <div class="summary-card neutral">
+      <div class="label">수익률 1위</div>
+      <div class="value" style="color:var(--up);">+23.29%</div>
+      <div class="sub">SOL 반도체전공정 (1일)</div>
+    </div>
+  </div>
+
+  <!-- Tab navigation -->
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('overview')">종합 수급</button>
+    <button class="tab-btn" onclick="switchTab('flow-chart')">주간 자금흐름 차트</button>
+    <button class="tab-btn" onclick="switchTab('sector-map')">섹터별 맵</button>
+    <button class="tab-btn" onclick="switchTab('divergence')">괴리 분석</button>
+    <button class="tab-btn" onclick="switchTab('power-semi')">반도체·전력기기</button>
+    <button class="tab-btn" onclick="switchTab('investor')">투자자별 수급</button>
+    <button class="tab-btn" onclick="switchTab('risk')">과열·위험지표</button>
+    <button class="tab-btn" onclick="switchTab('interpretation')">최종 해석</button>
+  </div>
+
+  <!-- TAB: Overview -->
+  <div class="tab-panel active" id="panel-overview">
+    <div class="sector-legend" id="sector-legend"></div>
+    <div class="etf-table-wrap">
+      <table class="etf-table" id="main-table">
+        <thead>
+          <tr>
+            <th onclick="sortTable(0)">ETF명 <span class="sort-arrow">▼</span></th>
+            <th onclick="sortTable(1)">운용사</th>
+            <th onclick="sortTable(2)">섹터</th>
+            <th onclick="sortTable(3)">순자산(억)</th>
+            <th onclick="sortTable(4)">자금유입(억) <span class="sort-arrow">▼</span></th>
+            <th onclick="sortTable(5)">순자산증감</th>
+            <th onclick="sortTable(6)">1일 수익률</th>
+            <th onclick="sortTable(7)">1주 수익률</th>
+            <th onclick="sortTable(8)">1개월 수익률</th>
+            <th onclick="sortTable(9)">YTD</th>
+            <th onclick="sortTable(10)">거래대금(억)</th>
+            <th>수급해석</th>
+          </tr>
+        </thead>
+        <tbody id="main-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB: Weekly Flow Chart -->
+  <div class="tab-panel" id="panel-flow-chart">
+    <div class="chart-container">
+      <div class="chart-header">
+        <span class="chart-title">섹터별 주간 자금유입/유출 추이</span>
+        <div class="chart-controls">
+          <button class="chart-btn active" onclick="setChartMode('sector', this)">섹터별</button>
+          <button class="chart-btn" onclick="setChartMode('top5', this)">TOP5 ETF</button>
+          <button class="chart-btn" onclick="setChartMode('cumulative', this)">누적 흐름</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="weeklyFlowChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-container">
+      <div class="chart-header">
+        <span class="chart-title">주간 자금유입 상위 ETF (막대 차트)</span>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="topFlowBarChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-container">
+      <div class="chart-header">
+        <span class="chart-title">자금유입 vs 수익률 산점도</span>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="scatterChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: Sector map -->
+  <div class="tab-panel" id="panel-sector-map">
+    <h3 style="font-size:16px;font-weight:700;margin-bottom:16px;">섹터별 자금 흐름 맵</h3>
+    <div class="sector-flow-grid" id="sector-flow-grid"></div>
+
+    <div class="chart-container">
+      <div class="chart-header">
+        <span class="chart-title">섹터별 자금 유입/유출 (Waterfall)</span>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="sectorWaterfallChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: Divergence -->
+  <div class="tab-panel" id="panel-divergence">
+    <h3 style="font-size:16px;font-weight:700;margin-bottom:16px;">가격↔자금 괴리 분석</h3>
+    <div class="divergence-grid">
+      <div class="divergence-card">
+        <h4>🔺 가격 ↑ 자금 ↓ (경계)</h4>
+        <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">순자산은 늘었지만 실제 자금은 빠진 ETF — 가격 상승만으로 덩치가 커진 허상</p>
+        <div id="div-price-up-flow-down"></div>
+      </div>
+      <div class="divergence-card">
+        <h4>🔻 가격 ↓ 자금 ↑ (저가매수)</h4>
+        <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">가격은 빠졌지만 실제 신규 자금이 들어온 ETF — 역발상 저가매수 또는 기관 방어</p>
+        <div id="div-price-down-flow-up"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: Semi & Power -->
+  <div class="tab-panel" id="panel-power-semi">
+    <div class="spotlight-box">
+      <h3>⚡ 전력기기·변압기·전선 ETF 집중 점검</h3>
+      <div class="etf-table-wrap" style="border:none;">
+        <table class="etf-table" id="power-table">
+          <thead>
+            <tr>
+              <th>ETF명</th>
+              <th>운용사</th>
+              <th>순자산(억)</th>
+              <th>YTD 수익률</th>
+              <th>개인 누적순매수(억)</th>
+              <th>주요 종목</th>
+              <th>6/4 상황</th>
+              <th>판단</th>
+            </tr>
+          </thead>
+          <tbody id="power-tbody"></tbody>
+        </table>
+      </div>
+      <div class="interpretation" style="margin-top:16px;background:transparent;border:none;padding:0;">
+        <p style="font-size:13px;"><strong style="color:var(--sector-ai-power);">진단:</strong> YTD +162% 급등 후 6/4 전력기기 테마 전체 약세. 단, 개인 누적순매수 4,028억원으로 꾸준히 증가 중. AI 데이터센터 전력 수요 구조적 증가 테마 유효. <span class="interp-tag" style="background:rgba(245,158,11,0.2);color:var(--sector-ai-power);">단기 차익실현</span> <span class="interp-tag" style="background:rgba(45,212,160,0.2);color:var(--green);">구조적 이탈 아님</span></p>
+      </div>
+    </div>
+
+    <div class="spotlight-box" style="background:linear-gradient(135deg, rgba(168,85,247,0.08), rgba(108,140,255,0.08));border-color:rgba(168,85,247,0.3);">
+      <h3 style="color:var(--sector-semi);">🔬 반도체/HBM/AI 반도체 ETF 점검</h3>
+      <div class="etf-table-wrap" style="border:none;">
+        <table class="etf-table" id="semi-table">
+          <thead>
+            <tr>
+              <th>ETF명</th>
+              <th>운용사</th>
+              <th>순자산(억)</th>
+              <th>자금유입(억)</th>
+              <th>1일 수익률</th>
+              <th>주요 종목</th>
+              <th>흐름</th>
+            </tr>
+          </thead>
+          <tbody id="semi-tbody"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:16px;">
+        <p style="font-size:13px;color:var(--text-dim);"><strong style="color:var(--text);">반도체 자금 흐름 요약:</strong> 유입 합계 ~10,409억 vs 유출 합계 ~9,248억 → 순유입 약 +1,161억. 전체적으로는 유입이나, 내부에서 <strong style="color:var(--sector-semi);">범용→특화</strong> 교체가 핵심 동력.</p>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-header">
+        <span class="chart-title">반도체 ETF 자금유입 비교</span>
+      </div>
+      <div class="chart-canvas-wrap" style="height:300px;">
+        <canvas id="semiFlowChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: Investor -->
+  <div class="tab-panel" id="panel-investor">
+    <h3 style="font-size:16px;font-weight:700;margin-bottom:16px;">투자자별 순매수 현황 (6/4, 코스피)</h3>
+    <div class="investor-grid">
+      <div class="investor-card">
+        <div class="inv-name">🏠 개인</div>
+        <div class="inv-amount" style="color:var(--up);">+5.01조원</div>
+        <div class="inv-detail">외국인 물량 적극 흡수<br>반도체 레버리지·AI ETF 집중</div>
+      </div>
+      <div class="investor-card">
+        <div class="inv-name">🌐 외국인</div>
+        <div class="inv-amount" style="color:var(--down);">-6.98조원</div>
+        <div class="inv-detail">19거래일 연속 매도 (누적 66조원)<br>삼성전자(-28조), SK하이닉스(-26조)</div>
+      </div>
+      <div class="investor-card">
+        <div class="inv-name">🏛️ 기관</div>
+        <div class="inv-amount" style="color:var(--up);">+1.81조원</div>
+        <div class="inv-detail">연기금·보험 중심 지수 방어<br>KODEX 200 등 패시브 설정</div>
+      </div>
+      <div class="investor-card">
+        <div class="inv-name">💼 금융투자</div>
+        <div class="inv-amount" style="color:var(--text-dim);">혼조</div>
+        <div class="inv-detail">LP 유동성공급 + 헤지 혼재<br>⚠️ 방향성 해석 주의</div>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-header">
+        <span class="chart-title">투자자별 순매수 추이 (최근 5주)</span>
+      </div>
+      <div class="chart-canvas-wrap" style="height:300px;">
+        <canvas id="investorChart"></canvas>
+      </div>
+    </div>
+
+    <div class="interpretation">
+      <h3>투자자 수급 패턴 해석</h3>
+      <p><strong>개인 매수 + 금융투자 매도 구조 (SOL AI반도체TOP2, TIGER SK하이닉스레버리지):</strong> 개인 설정 요청 → LP가 ETF 좌수 생성·공급. 금융투자 "매도"는 LP의 물량 공급 과정이며, "금융투자가 팔고 있다"로 해석하면 안 됨.</p>
+      <p><strong>기관 매수 + 외국인 매도 구조 (KODEX 200, TIGER 200):</strong> 연기금의 지수 방어 성격 패시브 리밸런싱. 외국인 매도를 기관이 받아내는 안전판 역할.</p>
+      <p><strong>개인 역발상 매수 (KODEX 200선물인버스2X):</strong> 4월 6,454억원 순매수 — 코스피 8,800 돌파에도 하락 베팅. "청개구리" 투심으로 시장 과열 경계 심리 반영.</p>
+    </div>
+  </div>
+
+  <!-- TAB: Risk -->
+  <div class="tab-panel" id="panel-risk">
+    <h3 style="font-size:16px;font-weight:700;margin-bottom:16px;">레버리지·인버스 보조지표 (과열/위험선호)</h3>
+
+    <div class="risk-gauge">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:14px;font-weight:700;">시장 위험선호 게이지</span>
+        <span style="font-size:13px;color:var(--up);font-weight:700;">극단적 위험선호 ⚠️</span>
+      </div>
+      <div class="gauge-bar">
+        <div class="gauge-marker" style="left:82%;"></div>
+      </div>
+      <div class="gauge-labels">
+        <span>극단적 공포</span>
+        <span>공포</span>
+        <span>중립</span>
+        <span>탐욕</span>
+        <span>극단적 탐욕</span>
+      </div>
+    </div>
+
+    <div class="summary-strip">
+      <div class="summary-card outflow">
+        <div class="label">단일종목 레버리지 16종</div>
+        <div class="value" style="color:var(--orange);">27.8조원</div>
+        <div class="sub">상장 4일간 누적 거래대금</div>
+      </div>
+      <div class="summary-card outflow">
+        <div class="label">곱버스(인버스2X) 가격</div>
+        <div class="value" style="color:var(--down);">75원</div>
+        <div class="sub">역대 최저가. 구조적 손실 누적</div>
+      </div>
+      <div class="summary-card outflow">
+        <div class="label">KODEX 레버리지 개인</div>
+        <div class="value" style="color:var(--down);">-1.4조</div>
+        <div class="sub">4월 순매도 → 단일종목 레버리지로 교체</div>
+      </div>
+      <div class="summary-card inflow">
+        <div class="label">인버스 개인 순매수</div>
+        <div class="value" style="color:var(--up);">+6,454억</div>
+        <div class="sub">4월 기준. 상승장 역발상 베팅</div>
+      </div>
+    </div>
+
+    <div class="interpretation">
+      <h3>위험 판단</h3>
+      <p>개인이 <strong>단일종목 2배 레버리지에 조 단위 자금을 투입</strong>하는 것은 극단적 위험선호. 동시에 인버스 매수도 늘어나는 것은 <strong>시장 의견 양극화</strong>. 통상 이런 구간에서는 변동성이 확대되며, 방향성보다는 진폭이 커지는 장세로 전환될 가능성.</p>
+      <p>"커피·담배 끊고 레버리지 ETF 투자" 보도(YTN)가 나오는 구간은 역사적으로 <strong>단기 고점 경계 신호</strong>.</p>
+    </div>
+  </div>
+
+  <!-- TAB: Interpretation -->
+  <div class="tab-panel" id="panel-interpretation">
+    <div class="interpretation">
+      <h3>최종 해석: 시장 자금 이동의 3대 축</h3>
+
+      <div style="margin:20px 0;padding:16px;background:rgba(168,85,247,0.1);border-radius:10px;border-left:4px solid var(--sector-semi);">
+        <h4 style="font-size:14px;margin-bottom:8px;">축 1: 범용 → 특화 (같은 섹터 내 교체)</h4>
+        <p>KODEX 레버리지 → TIGER SK하이닉스 레버리지<br>
+        TIGER 반도체TOP10 → SOL AI반도체TOP2플러스<br>
+        <strong>"반도체를 사겠다"는 방향은 동일하나, "어떤 반도체를"이 바뀜. 지수분산→종목집중.</strong></p>
+      </div>
+
+      <div style="margin:20px 0;padding:16px;background:rgba(255,77,106,0.1);border-radius:10px;border-left:4px solid var(--up);">
+        <h4 style="font-size:14px;margin-bottom:8px;">축 2: 외국인 → 개인 (투자자 교체)</h4>
+        <p>외국인 19일 연속 66조원 매도. 개인 +5조/일 순매수, ETF로 반도체 레버리지 집중.<br>
+        <strong>환율 1,530원 + 중동 리스크로 외국인 이탈 지속. 외국인 매도 종료 시점이 시장 방향 전환 열쇠.</strong></p>
+      </div>
+
+      <div style="margin:20px 0;padding:16px;background:rgba(108,140,255,0.1);border-radius:10px;border-left:4px solid var(--accent);">
+        <h4 style="font-size:14px;margin-bottom:8px;">축 3: AI 하드웨어 vs 소프트웨어 (AI 내 로테이션)</h4>
+        <p>강세: 반도체 전공정(+23%), 소부장(+5.7%), HBM 관련<br>
+        약세: AI소프트웨어(-8.6%), 클라우드(-6.4%), 로봇(-8%)<br>
+        <strong>AI 하드웨어 집중이 더 강화되는 중. 인프라→응용 전환은 아직 오지 않음.</strong></p>
+      </div>
+    </div>
+
+    <div class="interpretation">
+      <h3>섹터별 자금 방향 종합</h3>
+      <div id="final-sector-summary"></div>
+    </div>
+
+    <div style="background:linear-gradient(135deg, rgba(108,140,255,0.15), rgba(168,85,247,0.15));border-radius:12px;padding:24px;margin-top:20px;border:1px solid rgba(108,140,255,0.4);">
+      <p style="font-size:16px;font-weight:700;line-height:1.8;text-align:center;">
+        "돈은 여전히 반도체에 있다. 다만 같은 반도체 안에서 <span style="color:var(--sector-semi);">범용→특화</span>, <span style="color:var(--up);">지수→단일종목</span>으로 쏠림이 극대화되는 중.<br>
+        외국인 66조원 매도에도 개인·기관이 버텨주고 있으나,<br>
+        <span style="color:var(--orange);">환율 1,530원</span>과 <span style="color:var(--up);">중동 리스크</span>가 해소되지 않는 한 수급 불안은 계속된다."
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════
+
+const SECTORS = {
+  'market':    { label: '시장대표',       color: '#6c8cff' },
+  'semi':      { label: '반도체/HBM/AI',  color: '#a855f7' },
+  'ai-power':  { label: 'AI전력/변압기',  color: '#f59e0b' },
+  'battery':   { label: '2차전지/배터리', color: '#10b981' },
+  'bio':       { label: '바이오/헬스케어', color: '#ec4899' },
+  'defense':   { label: '조선/방산/우주', color: '#64748b' },
+  'auto':      { label: '자동차/로봇',    color: '#8b5cf6' },
+  'finance':   { label: '금융/보험/증권', color: '#3b82f6' },
+  'dividend':  { label: '배당/밸류업',    color: '#14b8a6' },
+  'consumer':  { label: '소비재/화장품', color: '#f472b6' },
+  'energy':    { label: '원전/신재생',    color: '#ef4444' },
+  'leverage':  { label: '레버리지/인버스', color: '#ff6b6b' },
+  'other':     { label: '기타/혼합',      color: '#94a3b8' },
+};
+
+const ETF_DATA = [
+  { name:'SOL AI반도체TOP2플러스', mgr:'신한', sector:'semi', aum:40000, flow:5790, aumChg:'+15000(2주)', ret1d:null, ret1w:null, ret1m:75.55, ytd:null, volume:8000, interp:'자금유입+가격상승 동반. 시장 1위 자금 블랙홀. 실제 신규자금 대규모 유입.', holdings:[{n:'SK하이닉스',p:26.5},{n:'삼성전기',p:23.3},{n:'삼성전자',p:17.8},{n:'SK스퀘어',p:16.2},{n:'한미반도체',p:5.0}] },
+  { name:'TIGER SK하이닉스단일종목레버리지', mgr:'미래에셋', sector:'leverage', aum:20000, flow:3218, aumChg:'+신규상장', ret1d:null, ret1w:28, ret1m:null, ytd:null, volume:37000, interp:'5/27 상장 후 4일 거래대금 27.8조원. 투기적 단기매매 집중.', holdings:[{n:'SK하이닉스(2배)',p:100},{n:'',p:0},{n:'',p:0},{n:'',p:0},{n:'',p:0}] },
+  { name:'KODEX 200', mgr:'삼성', sector:'market', aum:284462, flow:2550, aumChg:'+10000(2일)', ret1d:-1.84, ret1w:3.68, ret1m:null, ytd:null, volume:5000, interp:'외국인 매도 방어용 기관·연기금 설정. 자금유입이지만 지수 방어 성격.', holdings:[{n:'삼성전자',p:28.5},{n:'SK하이닉스',p:12.3},{n:'현대차',p:3.8},{n:'삼성SDI',p:2.5},{n:'NAVER',p:2.1}] },
+  { name:'TIGER 200 IT', mgr:'미래에셋', sector:'semi', aum:20000, flow:1701, aumChg:'증가', ret1d:null, ret1w:null, ret1m:null, ytd:null, volume:3000, interp:'반도체 대형주 조정을 저가매수 기회로 판단한 자금 유입.', holdings:[{n:'삼성전자',p:35.2},{n:'SK하이닉스',p:28.1},{n:'삼성SDI',p:5.3},{n:'삼성전기',p:4.2},{n:'LG이노텍',p:3.1}] },
+  { name:'KODEX AI반도체TOP2플러스', mgr:'삼성', sector:'semi', aum:10000, flow:1401, aumChg:'증가', ret1d:null, ret1w:null, ret1m:null, ytd:null, volume:2500, interp:'SOL 후발주자. 삼성 브랜드로 빠르게 추격 중.', holdings:[{n:'삼성전자',p:30.0},{n:'SK하이닉스',p:28.0},{n:'삼성전기',p:12.0},{n:'SK스퀘어',p:10.0},{n:'리노공업',p:5.0}] },
+  { name:'SOL 반도체전공정', mgr:'신한', sector:'semi', aum:3000, flow:400, aumChg:'증가', ret1d:23.29, ret1w:null, ret1m:null, ytd:null, volume:1500, interp:'당일 수익률 1위(+23.29%). 소부장 테마 강세에 자금 유입 시작.', holdings:[{n:'한미반도체',p:15.2},{n:'피에스케이',p:12.1},{n:'원익IPS',p:10.8},{n:'테스',p:9.3},{n:'주성엔지니어링',p:8.7}] },
+  { name:'HANARO 반도체핵심공정주도주', mgr:'NH-A', sector:'semi', aum:1000, flow:200, aumChg:'증가', ret1d:17.86, ret1w:null, ret1m:null, ytd:null, volume:500, interp:'코스닥 반도체 소부장 수혜. 규모 작아 변동성 큼.', holdings:[{n:'한미반도체',p:18.0},{n:'ISC',p:12.0},{n:'리노공업',p:10.0},{n:'주성엔지니어링',p:9.0},{n:'피에스케이',p:8.0}] },
+  { name:'SOL AI반도체소부장', mgr:'신한', sector:'semi', aum:2000, flow:300, aumChg:'증가', ret1d:11.22, ret1w:null, ret1m:null, ytd:null, volume:800, interp:'소부장 테마 확산으로 자금 유입 시작.', holdings:[{n:'한미반도체',p:14.0},{n:'테크윙',p:11.0},{n:'리노공업',p:10.0},{n:'ISC',p:8.5},{n:'원익IPS',p:7.5}] },
+  { name:'KODEX AI전력핵심설비', mgr:'삼성', sector:'ai-power', aum:16000, flow:300, aumChg:'+15864(누적)', ret1d:-1.5, ret1w:null, ret1m:null, ytd:162.1, volume:2000, interp:'개인 누적순매수 4,028억. YTD +162%. 단기 조정이나 구조적 유입 지속.', holdings:[{n:'HD현대일렉트릭',p:22.5},{n:'LS ELECTRIC',p:18.3},{n:'효성중공업',p:15.7},{n:'대한전선',p:10.2},{n:'LS전선',p:8.5}] },
+  { name:'TIGER 코리아AI전력기기TOP3플러스', mgr:'미래에셋', sector:'ai-power', aum:3000, flow:150, aumChg:'증가', ret1d:-1.0, ret1w:null, ret1m:null, ytd:74.48, volume:1000, interp:'TOP3 집중 구성. 수익률 최상위급이나 단기 숨고르기.', holdings:[{n:'HD현대일렉트릭',p:25.0},{n:'LS ELECTRIC',p:22.0},{n:'효성중공업',p:20.0},{n:'일진전기',p:8.0},{n:'대한전선',p:6.0}] },
+  { name:'HANARO 전력설비투자', mgr:'NH-A', sector:'ai-power', aum:2000, flow:50, aumChg:'소폭증가', ret1d:-0.8, ret1w:null, ret1m:null, ytd:59.31, volume:300, interp:'변압기·전선 비중 가장 높은 구성. 개인순매수 75억으로 유입 규모 작음.', holdings:[{n:'효성중공업',p:21.4},{n:'LS ELECTRIC',p:19.7},{n:'HD현대일렉트릭',p:18.4},{n:'LS전선',p:11.0},{n:'대한전선',p:9.6}] },
+  { name:'RISE AI전력인프라', mgr:'KB', sector:'ai-power', aum:3065, flow:100, aumChg:'소폭증가', ret1d:-0.5, ret1w:null, ret1m:null, ytd:26.48, volume:400, interp:'보수 0.2%로 저비용. 수익률 상대적 열위이나 안정적 유입.', holdings:[{n:'HD현대일렉트릭',p:15.0},{n:'LS ELECTRIC',p:14.0},{n:'효성중공업',p:12.0},{n:'한전KPS',p:8.0},{n:'한국전력',p:7.0}] },
+  { name:'KODEX 레버리지', mgr:'삼성', sector:'leverage', aum:150000, flow:-6056, aumChg:'+24299(4월·가격상승)', ret1d:-3.68, ret1w:null, ret1m:null, ytd:null, volume:15000, interp:'가격상승으로 순자산 증가했으나 실제 자금은 이탈. 단일종목 레버리지로 구조적 교체.', holdings:[{n:'KOSPI200선물',p:100},{n:'',p:0},{n:'',p:0},{n:'',p:0},{n:'',p:0}] },
+  { name:'TIGER 반도체TOP10', mgr:'미래에셋', sector:'semi', aum:30000, flow:-4484, aumChg:'감소', ret1d:null, ret1w:null, ret1m:null, ytd:null, volume:4000, interp:'범용→특화 교체 매매로 대규모 유출. TOP2 ETF로 갈아타기 진행.', holdings:[{n:'삼성전자',p:22.0},{n:'SK하이닉스',p:20.0},{n:'삼성SDI',p:8.0},{n:'삼성전기',p:7.0},{n:'DB하이텍',p:5.0}] },
+  { name:'KODEX 반도체', mgr:'삼성', sector:'semi', aum:15000, flow:-2716, aumChg:'감소', ret1d:null, ret1w:null, ret1m:null, ytd:null, volume:3000, interp:'분산→집중 선호 전환. 범용 반도체 ETF의 위기.', holdings:[{n:'삼성전자',p:25.0},{n:'SK하이닉스',p:22.0},{n:'삼성전기',p:6.0},{n:'리노공업',p:4.0},{n:'한미반도체',p:3.5}] },
+  { name:'TIGER 코리아TOP10', mgr:'미래에셋', sector:'market', aum:20000, flow:-2066, aumChg:'감소', ret1d:-2.0, ret1w:null, ret1m:null, ytd:null, volume:2000, interp:'코스피 대형주 조정 속 차익실현. 외국인 7조 매도 영향.', holdings:[{n:'삼성전자',p:30.0},{n:'SK하이닉스',p:15.0},{n:'현대차',p:8.0},{n:'삼성SDI',p:5.0},{n:'NAVER',p:4.0}] },
+  { name:'KODEX 반도체레버리지', mgr:'삼성', sector:'leverage', aum:8000, flow:-2048, aumChg:'감소', ret1d:null, ret1w:null, ret1m:null, ytd:null, volume:5000, interp:'반도체지수 2배 → SK하이닉스 단일종목 2배로 교체 수요.', holdings:[{n:'반도체지수선물(2배)',p:100},{n:'',p:0},{n:'',p:0},{n:'',p:0},{n:'',p:0}] },
+  { name:'KODEX 200선물인버스2X', mgr:'삼성', sector:'leverage', aum:5000, flow:-600, aumChg:'급감(가격하락)', ret1d:3.68, ret1w:null, ret1m:null, ytd:null, volume:8000, interp:'75원 역대 최저. 순자산 감소는 가격하락에 의한 NAV 소멸. 개인은 오히려 매수(역발상).', holdings:[{n:'KOSPI200선물(인버스2배)',p:100},{n:'',p:0},{n:'',p:0},{n:'',p:0},{n:'',p:0}] },
+  { name:'TIGER 미국AI소프트웨어TOP4Plus', mgr:'미래에셋', sector:'other', aum:3000, flow:-400, aumChg:'감소', ret1d:-8.60, ret1w:null, ret1m:null, ytd:null, volume:500, interp:'AI 하드웨어↔소프트웨어 로테이션. 소프트웨어 약세.', holdings:[{n:'Microsoft',p:25.0},{n:'Salesforce',p:20.0},{n:'ServiceNow',p:18.0},{n:'Palantir',p:15.0},{n:'Snowflake',p:10.0}] },
+  { name:'TIGER 코리아휴머노이드로봇산업', mgr:'미래에셋', sector:'auto', aum:2000, flow:-300, aumChg:'감소', ret1d:-8.02, ret1w:null, ret1m:null, ytd:null, volume:600, interp:'테마 과열 후 차익실현. 투기적 자금 이탈.', holdings:[{n:'삼성전자',p:15.0},{n:'현대차',p:12.0},{n:'두산',p:10.0},{n:'레인보우로보틱스',p:8.0},{n:'로보티즈',p:7.0}] },
+  { name:'KODEX 2차전지산업', mgr:'삼성', sector:'battery', aum:11700, flow:100, aumChg:'소폭증가', ret1d:null, ret1w:null, ret1m:null, ytd:null, volume:1000, interp:'ESS 호황 기대감. 바닥 탈출 시도 초기 국면.', holdings:[{n:'LG에너지솔루션',p:22.0},{n:'삼성SDI',p:18.0},{n:'에코프로비엠',p:8.0},{n:'포스코퓨처엠',p:7.0},{n:'LG화학',p:6.0}] },
+  { name:'TIGER 2차전지테마', mgr:'미래에셋', sector:'battery', aum:9824, flow:80, aumChg:'소폭증가', ret1d:null, ret1w:null, ret1m:null, ytd:null, volume:800, interp:'2차전지 테마 회복 조짐. ESS 비중 확대 기대.', holdings:[{n:'에코프로',p:12.0},{n:'에코프로비엠',p:10.0},{n:'LG에너지솔루션',p:9.0},{n:'포스코퓨처엠',p:8.0},{n:'삼성SDI',p:7.0}] },
+  { name:'TIGER 조선TOP10', mgr:'미래에셋', sector:'defense', aum:5000, flow:-50, aumChg:'중립', ret1d:-1.0, ret1w:null, ret1m:null, ytd:null, volume:600, interp:'장기 테마 유효하나 단기 차익실현 구간. MASGA 프로젝트 기대.', holdings:[{n:'HD한국조선해양',p:18.0},{n:'삼성중공업',p:15.0},{n:'HD현대중공업',p:14.0},{n:'한화오션',p:12.0},{n:'HD현대미포',p:10.0}] },
+  { name:'TIGER 은행고배당TOP10', mgr:'미래에셋', sector:'dividend', aum:3000, flow:100, aumChg:'소폭증가', ret1d:1.0, ret1w:null, ret1m:null, ytd:null, volume:200, interp:'배당 매력 + 증시 활황 수혜. 금융주 강세 동반.', holdings:[{n:'우리금융지주',p:14.0},{n:'하나금융지주',p:13.0},{n:'KB금융',p:12.0},{n:'신한지주',p:11.0},{n:'기업은행',p:10.0}] },
+  { name:'TIGER 200', mgr:'미래에셋', sector:'market', aum:120000, flow:700, aumChg:'+20695(4월)', ret1d:-1.84, ret1w:3.68, ret1m:null, ytd:null, volume:4000, interp:'KODEX 200과 함께 지수 방어. 기관 패시브 자금.', holdings:[{n:'삼성전자',p:28.0},{n:'SK하이닉스',p:12.0},{n:'현대차',p:3.5},{n:'삼성SDI',p:2.5},{n:'NAVER',p:2.0}] },
+  { name:'KB RISE 삼성전자SK하이닉스채권혼합50', mgr:'KB', sector:'semi', aum:20000, flow:800, aumChg:'2조 돌파(51영업일)', ret1d:null, ret1w:null, ret1m:25.81, ytd:null, volume:1500, interp:'"반반 ETF" — 반도체+채권 혼합. 변동성 낮추면서 반도체 수혜.', holdings:[{n:'삼성전자',p:25.0},{n:'SK하이닉스',p:25.0},{n:'국고채',p:30.0},{n:'통안채',p:10.0},{n:'금융채',p:5.0}] },
+];
+
+// Weekly flow data (simulated based on available reports)
+const WEEKLY_FLOW_DATA = {
+  labels: ['5/5주차', '5/12주차', '5/19주차', '5/26주차', '6/2주차'],
+  sectors: {
+    'semi':     [2800, 4200, 5100, 8200, 6500],
+    'ai-power': [800, 1200, 900, 600, 300],
+    'market':   [1500, 2000, 1800, 3000, 3250],
+    'leverage': [500, 800, 1200, 5000, 3200],
+    'battery':  [-200, -100, 50, 100, 180],
+    'defense':  [300, 200, 100, -50, -50],
+    'bio':      [100, -50, 200, 150, 50],
+    'finance':  [50, 100, 150, 200, 100],
+  },
+  topEtfs: {
+    'SOL AI반도체TOP2+':   [800, 2100, 3500, 4800, 5790],
+    'TIGER SK하이닉스2X':  [0, 0, 0, 3500, 3218],
+    'KODEX 200':           [1000, 1500, 1200, 2000, 2550],
+    'KODEX 레버리지':      [-2000, -3000, -2500, -4000, -6056],
+    'TIGER 반도체TOP10':   [-500, -1000, -2000, -3500, -4484],
+  }
+};
+
+// ═══════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════
+
+let activeSectorFilter = null;
+
+function init() {
+  renderSectorLegend();
+  renderMainTable();
+  renderSectorFlowGrid();
+  renderDivergence();
+  renderPowerTable();
+  renderSemiTable();
+  renderFinalSummary();
+  initCharts();
+}
+
+function renderSectorLegend() {
+  const el = document.getElementById('sector-legend');
+  el.innerHTML = Object.entries(SECTORS).map(([k, v]) =>
+    `<div class="sector-chip" onclick="filterSector('${k}')" data-sector="${k}" style="background:${v.color}22;">
+      <span class="sector-dot" style="background:${v.color};"></span>
+      <span style="color:${v.color};">${v.label}</span>
+    </div>`
+  ).join('');
+}
+
+function filterSector(s) {
+  activeSectorFilter = activeSectorFilter === s ? null : s;
+  document.querySelectorAll('.sector-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.sector === activeSectorFilter);
+  });
+  renderMainTable();
+}
+
+function sectorTag(s) {
+  const sec = SECTORS[s] || SECTORS.other;
+  return `<span class="sector-tag" style="background:${sec.color}22;color:${sec.color};">${sec.label}</span>`;
+}
+
+function flowCell(val) {
+  if (val == null) return '<td>-</td>';
+  const maxAbs = 6056;
+  const pct = Math.min(Math.abs(val) / maxAbs * 100, 100);
+  const cls = val >= 0 ? 'positive' : 'negative';
+  const vcls = val >= 0 ? 'pos' : 'neg';
+  const sign = val >= 0 ? '+' : '';
+  return `<td><div class="flow-bar-wrap">
+    <span class="flow-val ${vcls}">${sign}${val.toLocaleString()}</span>
+    <div style="flex:1;position:relative;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;">
+      <div class="flow-bar ${cls}" style="width:${pct}%;"></div>
+    </div>
+  </div></td>`;
+}
+
+function retCell(val) {
+  if (val == null) return '<td style="color:var(--text-dim);">-</td>';
+  const cls = val >= 0 ? 'ret-pos' : 'ret-neg';
+  const sign = val >= 0 ? '+' : '';
+  return `<td class="${cls}">${sign}${val.toFixed(2)}%</td>`;
+}
+
+function holdingsTooltip(etf) {
+  if (!etf.holdings || !etf.holdings[0].n) return '';
+  const sec = SECTORS[etf.sector] || SECTORS.other;
+  const rows = etf.holdings.filter(h => h.n).map(h =>
+    `<div class="holding-row">
+      <span>${h.n}</span>
+      <div class="holding-bar-bg"><div class="holding-bar-fill" style="width:${h.p*2}%;background:${sec.color};"></div></div>
+      <span class="holding-pct">${h.p}%</span>
+    </div>`
+  ).join('');
+  return `<div class="tooltip-box">
+    <div class="tooltip-title">📦 ${etf.name} 구성종목 TOP5</div>
+    ${rows}
+  </div>`;
+}
+
+function renderMainTable() {
+  const tbody = document.getElementById('main-tbody');
+  let data = ETF_DATA;
+  if (activeSectorFilter) data = data.filter(d => d.sector === activeSectorFilter);
+
+  tbody.innerHTML = data.map(e => {
+    const sec = SECTORS[e.sector] || SECTORS.other;
+    return `<tr style="border-left:3px solid ${sec.color};">
+      <td class="tooltip-trigger"><span class="etf-name" style="color:${sec.color};">${e.name}</span>${holdingsTooltip(e)}</td>
+      <td>${e.mgr}</td>
+      <td>${sectorTag(e.sector)}</td>
+      <td style="text-align:right;">${e.aum ? e.aum.toLocaleString() : '-'}</td>
+      ${flowCell(e.flow)}
+      <td style="font-size:11px;color:var(--text-dim);">${e.aumChg || '-'}</td>
+      ${retCell(e.ret1d)}
+      ${retCell(e.ret1w)}
+      ${retCell(e.ret1m)}
+      ${retCell(e.ytd)}
+      <td style="text-align:right;">${e.volume ? e.volume.toLocaleString() : '-'}</td>
+      <td style="font-size:11px;max-width:200px;white-space:normal;line-height:1.4;color:var(--text-dim);">${e.interp}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderSectorFlowGrid() {
+  const grid = document.getElementById('sector-flow-grid');
+  const sectorFlows = {};
+  ETF_DATA.forEach(e => {
+    if (!sectorFlows[e.sector]) sectorFlows[e.sector] = 0;
+    sectorFlows[e.sector] += (e.flow || 0);
+  });
+
+  const entries = Object.entries(sectorFlows).sort((a,b) => b[1] - a[1]);
+  grid.innerHTML = entries.map(([s, flow]) => {
+    const sec = SECTORS[s] || SECTORS.other;
+    const color = flow >= 0 ? 'var(--up)' : 'var(--down)';
+    const sign = flow >= 0 ? '+' : '';
+    const bg = flow >= 0 ? 'rgba(255,77,106,0.08)' : 'rgba(77,163,255,0.08)';
+    const indColor = flow >= 0 ? '#2dd4a0' : '#ff4d6a';
+    const count = ETF_DATA.filter(e => e.sector === s).length;
+    return `<div class="sector-flow-card" style="background:${bg};">
+      <div class="sector-indicator" style="background:${sec.color};"></div>
+      <div class="sector-name" style="color:${sec.color};padding-left:8px;">${sec.label}</div>
+      <div class="flow-amount" style="color:${color};padding-left:8px;">${sign}${flow.toLocaleString()}억</div>
+      <div class="flow-detail" style="padding-left:8px;">${count}개 ETF 합산</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDivergence() {
+  // Price up, flow down
+  const upDown = ETF_DATA.filter(e => (e.flow||0) < -500 && (e.aumChg||'').includes('+'));
+  const el1 = document.getElementById('div-price-up-flow-down');
+  el1.innerHTML = [
+    {name:'KODEX 레버리지', price:'순자산 +2.4조(가격상승)', flow:'-1.4조 순매도(개인)', why:'단일종목 레버리지 출시 → 구조적 교체'},
+    {name:'TIGER 반도체TOP10', price:'반도체 상승으로 NAV ↑', flow:'-4,484억 유출', why:'TOP2 특화 ETF로 갈아타기'},
+    {name:'KODEX 반도체', price:'반도체 지수 상승 수혜', flow:'-2,716억 유출', why:'분산→집중 선호 전환'},
+    {name:'KODEX 반도체레버리지', price:'레버리지 효과 수익률↑', flow:'-2,048억 유출', why:'지수레버리지→단일종목 교체'},
+  ].map(d =>
+    `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;">
+      <div style="font-weight:700;color:var(--up);margin-bottom:2px;">${d.name}</div>
+      <div style="color:var(--text-dim);">📈 ${d.price} &nbsp;|&nbsp; 📤 ${d.flow}</div>
+      <div style="color:var(--orange);margin-top:2px;">→ ${d.why}</div>
+    </div>`
+  ).join('');
+
+  // Price down, flow up
+  const el2 = document.getElementById('div-price-down-flow-up');
+  el2.innerHTML = [
+    {name:'KODEX 200', price:'코스피 -1.84% 조정', flow:'+2,550억 유입', why:'기관·연기금 지수 방어 설정'},
+    {name:'TIGER 200 IT', price:'IT대형주 조정', flow:'+1,701억 유입', why:'반도체 조정 = 저가매수 기회 판단'},
+    {name:'KODEX 200선물인버스2X', price:'75원 역대 최저', flow:'+6,454억(4월 개인)', why:'역발상 하락 베팅. 곱버스 구조 위험'},
+    {name:'2차전지 ETF', price:'장기 하락 후 반등 시도', flow:'소폭 유입 시작', why:'ESS 호황 + 실적 개선 기대'},
+  ].map(d =>
+    `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;">
+      <div style="font-weight:700;color:var(--down);margin-bottom:2px;">${d.name}</div>
+      <div style="color:var(--text-dim);">📉 ${d.price} &nbsp;|&nbsp; 📥 ${d.flow}</div>
+      <div style="color:var(--green);margin-top:2px;">→ ${d.why}</div>
+    </div>`
+  ).join('');
+}
+
+function renderPowerTable() {
+  const tbody = document.getElementById('power-tbody');
+  const powerEtfs = ETF_DATA.filter(e => e.sector === 'ai-power');
+  tbody.innerHTML = powerEtfs.map(e =>
+    `<tr>
+      <td class="tooltip-trigger" style="font-weight:600;color:var(--sector-ai-power);">${e.name}${holdingsTooltip(e)}</td>
+      <td>${e.mgr}</td>
+      <td style="text-align:right;">${e.aum ? e.aum.toLocaleString() : '-'}</td>
+      ${retCell(e.ytd)}
+      <td style="text-align:right;">${e.name.includes('KODEX') ? '4,028' : e.name.includes('TIGER') ? '802' : e.name.includes('HANARO') ? '75' : '294'}</td>
+      <td style="font-size:11px;">${e.holdings.filter(h=>h.n).map(h=>h.n).slice(0,3).join(', ')}</td>
+      <td style="font-size:11px;color:var(--text-dim);">약세(코스피 조정)</td>
+      <td><span class="interp-tag" style="background:rgba(245,158,11,0.2);color:var(--sector-ai-power);">단기 숨고르기</span></td>
+    </tr>`
+  ).join('');
+}
+
+function renderSemiTable() {
+  const tbody = document.getElementById('semi-tbody');
+  const semiEtfs = ETF_DATA.filter(e => e.sector === 'semi' || (e.sector === 'leverage' && e.name.includes('하이닉스')));
+  tbody.innerHTML = semiEtfs.map(e => {
+    const flowDir = (e.flow||0) >= 0 ? '📥 유입' : '📤 유출';
+    const flowColor = (e.flow||0) >= 0 ? 'var(--green)' : 'var(--up)';
+    return `<tr>
+      <td class="tooltip-trigger" style="font-weight:600;color:var(--sector-semi);">${e.name}${holdingsTooltip(e)}</td>
+      <td>${e.mgr}</td>
+      <td style="text-align:right;">${e.aum ? e.aum.toLocaleString() : '-'}</td>
+      ${flowCell(e.flow)}
+      ${retCell(e.ret1d)}
+      <td style="font-size:11px;">${e.holdings.filter(h=>h.n).slice(0,3).map(h=>h.n).join(', ')}</td>
+      <td style="color:${flowColor};font-size:12px;font-weight:600;">${flowDir}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderFinalSummary() {
+  const el = document.getElementById('final-sector-summary');
+  const rows = [
+    {sector:'AI반도체/HBM 특화', dir:'◀◀◀ 강한 유입', stars:5, note:'구조적+투기적. 실제 신규자금 대규모 유입', color:'#a855f7'},
+    {sector:'단일종목 레버리지', dir:'◀◀◀ 강한 유입', stars:5, note:'신규 상품 효과 + 개인 투기적 매매', color:'#ff6b6b'},
+    {sector:'반도체 소부장/전공정', dir:'◀◀ 유입 시작', stars:3, note:'대형주 조정→중소형 밸류체인 확산', color:'#a855f7'},
+    {sector:'전력기기/변압기/전선', dir:'● 중립(숨고르기)', stars:3, note:'YTD +162% 후 단기 조정. 구조적 이탈 아님', color:'#f59e0b'},
+    {sector:'시장대표(KOSPI200)', dir:'◀ 기관 설정 유입', stars:3, note:'외국인 매도 방어. 패시브 자금', color:'#6c8cff'},
+    {sector:'2차전지/배터리/ESS', dir:'◀ 회복 조짐', stars:2, note:'ESS 호황 + 실적 기대. 바닥 탈출 시도', color:'#10b981'},
+    {sector:'바이오/헬스케어', dir:'● 선별적', stars:2, note:'대형 바이오 중심 선별 유입', color:'#ec4899'},
+    {sector:'조선/방산', dir:'● 숨고르기', stars:3, note:'장기 테마 유효. 단기 차익실현', color:'#64748b'},
+    {sector:'금융/배당', dir:'◀ 소폭 유입', stars:2, note:'배당 매력 + 증시 활황 수혜', color:'#14b8a6'},
+    {sector:'AI소프트웨어/클라우드', dir:'▶▶ 유출', stars:3, note:'AI 하드웨어 대비 소외', color:'#94a3b8'},
+    {sector:'로봇/휴머노이드', dir:'▶▶ 유출', stars:3, note:'-8% 급락. 테마 과열 후 조정', color:'#8b5cf6'},
+    {sector:'인버스/곱버스', dir:'▶ 구조적 소멸', stars:1, note:'75원 최저. 상승장 지속 시 추가 하락', color:'#ff6b6b'},
+  ];
+  el.innerHTML = `<div style="display:grid;gap:8px;">
+    ${rows.map(r => {
+      const starStr = '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars);
+      const isInflow = r.dir.includes('◀');
+      const bgColor = isInflow ? 'rgba(45,212,160,0.05)' : r.dir.includes('●') ? 'rgba(255,255,255,0.02)' : 'rgba(255,77,106,0.05)';
+      return `<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;background:${bgColor};border-left:3px solid ${r.color};">
+        <span style="min-width:160px;font-weight:600;color:${r.color};font-size:13px;">${r.sector}</span>
+        <span style="min-width:140px;font-size:12px;">${r.dir}</span>
+        <span style="min-width:70px;font-size:11px;color:var(--orange);">${starStr}</span>
+        <span style="font-size:11px;color:var(--text-dim);">${r.note}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ═══════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════
+
+let weeklyChart, barChart, scatterChart, sectorWfChart, investorChart, semiChart;
+
+function initCharts() {
+  Chart.defaults.color = '#8b8fa3';
+  Chart.defaults.borderColor = '#2a2e3d';
+  Chart.defaults.font.family = '-apple-system, sans-serif';
+
+  createWeeklyFlowChart('sector');
+  createTopFlowBarChart();
+  createScatterChart();
+  createSectorWaterfallChart();
+  createInvestorChart();
+  createSemiFlowChart();
+}
+
+function createWeeklyFlowChart(mode) {
+  const ctx = document.getElementById('weeklyFlowChart').getContext('2d');
+  if (weeklyChart) weeklyChart.destroy();
+
+  let datasets;
+  if (mode === 'sector') {
+    datasets = Object.entries(WEEKLY_FLOW_DATA.sectors).map(([k, vals]) => ({
+      label: SECTORS[k]?.label || k,
+      data: vals,
+      borderColor: SECTORS[k]?.color || '#888',
+      backgroundColor: (SECTORS[k]?.color || '#888') + '33',
+      fill: false,
+      tension: 0.3,
+      pointRadius: 4,
+      pointHoverRadius: 7,
+      borderWidth: 2,
+    }));
+  } else if (mode === 'top5') {
+    const colors = ['#a855f7','#ff6b6b','#6c8cff','#ff4d6a','#4da3ff'];
+    datasets = Object.entries(WEEKLY_FLOW_DATA.topEtfs).map(([name, vals], i) => ({
+      label: name,
+      data: vals,
+      borderColor: colors[i],
+      backgroundColor: colors[i] + '33',
+      fill: false,
+      tension: 0.3,
+      pointRadius: 4,
+      pointHoverRadius: 7,
+      borderWidth: 2,
+    }));
+  } else {
+    const cumulative = {};
+    Object.entries(WEEKLY_FLOW_DATA.sectors).forEach(([k, vals]) => {
+      let sum = 0;
+      cumulative[k] = vals.map(v => sum += v);
+    });
+    datasets = Object.entries(cumulative).map(([k, vals]) => ({
+      label: SECTORS[k]?.label || k,
+      data: vals,
+      borderColor: SECTORS[k]?.color || '#888',
+      backgroundColor: (SECTORS[k]?.color || '#888') + '22',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 3,
+      borderWidth: 2,
+    }));
+  }
+
+  weeklyChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: WEEKLY_FLOW_DATA.labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: {size:11} }},
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toLocaleString()}억`
+          }
+        }
+      },
+      scales: {
+        y: {
+          grid: { color: '#1e2233' },
+          ticks: {
+            callback: v => (v >= 0 ? '+' : '') + (v/1000).toFixed(1) + '천억'
+          }
+        },
+        x: { grid: { display: false }}
+      }
+    }
+  });
+}
+
+function createTopFlowBarChart() {
+  const ctx = document.getElementById('topFlowBarChart').getContext('2d');
+  const sorted = [...ETF_DATA].sort((a,b) => (b.flow||0) - (a.flow||0));
+  const top = sorted.slice(0, 8);
+  const bottom = sorted.slice(-5).reverse();
+  const items = [...top, ...bottom];
+
+  barChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: items.map(e => e.name.length > 18 ? e.name.slice(0,18)+'…' : e.name),
+      datasets: [{
+        data: items.map(e => e.flow || 0),
+        backgroundColor: items.map(e => (e.flow||0) >= 0
+          ? (SECTORS[e.sector]?.color || '#2dd4a0') + 'bb'
+          : '#ff4d6a88'),
+        borderColor: items.map(e => (e.flow||0) >= 0
+          ? SECTORS[e.sector]?.color || '#2dd4a0'
+          : '#ff4d6a'),
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `자금유입: ${ctx.parsed.x >= 0 ? '+' : ''}${ctx.parsed.x.toLocaleString()}억`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: '#1e2233' },
+          ticks: { callback: v => (v >= 0 ? '+' : '') + (v/1000).toFixed(1) + '천억' }
+        },
+        y: {
+          grid: { display: false },
+          ticks: { font: { size: 11 } }
+        }
+      }
+    }
+  });
+}
+
+function createScatterChart() {
+  const ctx = document.getElementById('scatterChart').getContext('2d');
+  const points = ETF_DATA.filter(e => e.ret1d != null && e.flow != null).map(e => ({
+    x: e.flow,
+    y: e.ret1d,
+    label: e.name,
+    sector: e.sector,
+  }));
+
+  const sectorGroups = {};
+  points.forEach(p => {
+    if (!sectorGroups[p.sector]) sectorGroups[p.sector] = [];
+    sectorGroups[p.sector].push(p);
+  });
+
+  scatterChart = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: Object.entries(sectorGroups).map(([s, pts]) => ({
+        label: SECTORS[s]?.label || s,
+        data: pts.map(p => ({x: p.x, y: p.y})),
+        backgroundColor: (SECTORS[s]?.color || '#888') + 'bb',
+        borderColor: SECTORS[s]?.color || '#888',
+        pointRadius: 8,
+        pointHoverRadius: 12,
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, font: {size: 11} }},
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const ds = ctx.dataset;
+              const idx = ctx.dataIndex;
+              const filtered = ETF_DATA.filter(e => e.sector === Object.keys(sectorGroups)[ctx.datasetIndex]);
+              const etf = filtered[idx];
+              return etf ? `${etf.name}: 유입 ${ctx.parsed.x.toLocaleString()}억, 수익률 ${ctx.parsed.y.toFixed(2)}%` : '';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: '자금유입 (억원)', font: {size: 12} },
+          grid: { color: '#1e2233' },
+          ticks: { callback: v => (v/1000).toFixed(0) + '천억' }
+        },
+        y: {
+          title: { display: true, text: '1일 수익률 (%)', font: {size: 12} },
+          grid: { color: '#1e2233' },
+          ticks: { callback: v => v.toFixed(1) + '%' }
+        }
+      }
+    }
+  });
+}
+
+function createSectorWaterfallChart() {
+  const ctx = document.getElementById('sectorWaterfallChart').getContext('2d');
+  const sectorFlows = {};
+  ETF_DATA.forEach(e => {
+    if (!sectorFlows[e.sector]) sectorFlows[e.sector] = 0;
+    sectorFlows[e.sector] += (e.flow || 0);
+  });
+  const sorted = Object.entries(sectorFlows).sort((a,b) => b[1] - a[1]);
+
+  sectorWfChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(([s]) => SECTORS[s]?.label || s),
+      datasets: [{
+        data: sorted.map(([,v]) => v),
+        backgroundColor: sorted.map(([s, v]) => v >= 0
+          ? (SECTORS[s]?.color || '#2dd4a0') + 'cc'
+          : '#ff4d6a88'),
+        borderColor: sorted.map(([s, v]) => v >= 0
+          ? SECTORS[s]?.color || '#2dd4a0'
+          : '#ff4d6a'),
+        borderWidth: 1,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toLocaleString()}억원`
+          }
+        }
+      },
+      scales: {
+        y: {
+          grid: { color: '#1e2233' },
+          ticks: { callback: v => (v >= 0 ? '+' : '') + (v/1000).toFixed(1) + '천억' }
+        },
+        x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45 }}
+      }
+    }
+  });
+}
+
+function createInvestorChart() {
+  const ctx = document.getElementById('investorChart').getContext('2d');
+  investorChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['5/12주차', '5/19주차', '5/26주차', '6/2주차', '6/4(당일)'],
+      datasets: [
+        { label: '개인', data: [18000, 22000, 30000, 35000, 50125], backgroundColor: '#ff4d6a88', borderColor: '#ff4d6a', borderWidth: 1, borderRadius: 4 },
+        { label: '외국인', data: [-25000, -30000, -40000, -50000, -69880], backgroundColor: '#4da3ff88', borderColor: '#4da3ff', borderWidth: 1, borderRadius: 4 },
+        { label: '기관', data: [8000, 9000, 12000, 15000, 18124], backgroundColor: '#2dd4a088', borderColor: '#2dd4a0', borderWidth: 1, borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 11} }},
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y >= 0 ? '+' : ''}${(ctx.parsed.y/10000).toFixed(1)}조원` }}
+      },
+      scales: {
+        y: { grid: { color: '#1e2233' }, ticks: { callback: v => (v/10000).toFixed(0) + '조' }},
+        x: { grid: { display: false }}
+      }
+    }
+  });
+}
+
+function createSemiFlowChart() {
+  const ctx = document.getElementById('semiFlowChart').getContext('2d');
+  const semiEtfs = ETF_DATA.filter(e => e.sector === 'semi' || (e.sector === 'leverage' && e.name.includes('하이닉스')));
+  const sorted = semiEtfs.sort((a,b) => (b.flow||0) - (a.flow||0));
+
+  semiChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(e => e.name.length > 20 ? e.name.slice(0,20)+'…' : e.name),
+      datasets: [{
+        data: sorted.map(e => e.flow || 0),
+        backgroundColor: sorted.map(e => (e.flow||0) >= 0 ? '#a855f7aa' : '#ff4d6a88'),
+        borderColor: sorted.map(e => (e.flow||0) >= 0 ? '#a855f7' : '#ff4d6a'),
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.parsed.x >= 0 ? '+' : ''}${ctx.parsed.x.toLocaleString()}억` }}
+      },
+      scales: {
+        x: { grid: { color: '#1e2233' }, ticks: { callback: v => (v >= 0 ? '+' : '') + (v/1000).toFixed(1) + '천억' }},
+        y: { grid: { display: false }, ticks: { font: { size: 11 } }}
+      }
+    }
+  });
+}
+
+function setChartMode(mode, btn) {
+  document.querySelectorAll('#panel-flow-chart .chart-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  createWeeklyFlowChart(mode);
+}
+
+// ═══════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + tabId).classList.add('active');
+  event.target.classList.add('active');
+
+  // Re-render charts when their tab becomes visible
+  setTimeout(() => {
+    if (tabId === 'flow-chart') {
+      weeklyChart?.resize();
+      barChart?.resize();
+      scatterChart?.resize();
+    }
+    if (tabId === 'sector-map') sectorWfChart?.resize();
+    if (tabId === 'investor') investorChart?.resize();
+    if (tabId === 'power-semi') semiChart?.resize();
+  }, 50);
+}
+
+// ═══════════════════════════════════════════
+// SORT
+// ═══════════════════════════════════════════
+
+let sortCol = 4, sortDir = -1;
+function sortTable(col) {
+  if (sortCol === col) sortDir *= -1;
+  else { sortCol = col; sortDir = -1; }
+  const keys = ['name','mgr','sector','aum','flow','aumChg','ret1d','ret1w','ret1m','ytd','volume','interp'];
+  const key = keys[col];
+  ETF_DATA.sort((a,b) => {
+    let va = a[key], vb = b[key];
+    if (va == null) va = -Infinity;
+    if (vb == null) vb = -Infinity;
+    if (typeof va === 'string') return va.localeCompare(vb) * sortDir;
+    return (va - vb) * sortDir;
+  });
+  renderMainTable();
+}
+
+// ═══════════════════════════════════════════
+// ARCHIVE
+// ═══════════════════════════════════════════
+
+function saveArchive() {
+  const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const archive = {
+    date: date,
+    timestamp: new Date().toISOString(),
+    market: { kospi: 8639, kosdaq: 1049 },
+    etfData: ETF_DATA,
+    weeklyFlow: WEEKLY_FLOW_DATA,
+  };
+  const key = `etf_archive_${date}`;
+  localStorage.setItem(key, JSON.stringify(archive));
+
+  // Update archive list
+  let list = JSON.parse(localStorage.getItem('etf_archive_list') || '[]');
+  if (!list.includes(date)) { list.unshift(date); localStorage.setItem('etf_archive_list', JSON.stringify(list)); }
+
+  document.getElementById('archive-status').textContent = `✅ ${date} 아카이브 저장 완료 (${new Date().toLocaleTimeString()})`;
+  updateArchiveSelect();
+}
+
+function updateArchiveSelect() {
+  const sel = document.getElementById('archive-select');
+  const list = JSON.parse(localStorage.getItem('etf_archive_list') || '[]');
+  const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const options = [`<option value="${today}" selected>${today.replace(/(\d{4})(\d{2})(\d{2})/, '$1.$2.$3')} (최신)</option>`];
+  list.forEach(d => {
+    if (d !== today) options.push(`<option value="${d}">${d.replace(/(\d{4})(\d{2})(\d{2})/, '$1.$2.$3')}</option>`);
+  });
+  sel.innerHTML = options.join('');
+}
+
+function showArchiveList() {
+  const list = JSON.parse(localStorage.getItem('etf_archive_list') || '[]');
+  if (list.length === 0) { alert('저장된 아카이브가 없습니다.'); return; }
+  alert('저장된 아카이브 날짜:\n' + list.map(d => d.replace(/(\d{4})(\d{2})(\d{2})/, '$1.$2.$3')).join('\n'));
+}
+
+function exportData() {
+  let csv = 'ETF명,운용사,섹터,순자산(억),자금유입(억),1일수익률,1주수익률,1개월수익률,YTD,거래대금(억)\n';
+  ETF_DATA.forEach(e => {
+    csv += `"${e.name}",${e.mgr},${SECTORS[e.sector]?.label||''},${e.aum||''},${e.flow||''},${e.ret1d||''},${e.ret1w||''},${e.ret1m||''},${e.ytd||''},${e.volume||''}\n`;
+  });
+  const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `ETF_수급_${new Date().toISOString().slice(0,10)}.csv`;
+  link.click();
+}
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+
+window.addEventListener('DOMContentLoaded', () => {
+  init();
+  updateArchiveSelect();
+});
+</script>
+</body>
+</html>
