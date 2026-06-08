@@ -591,6 +591,7 @@
       <p style="color:var(--text-dim);font-size:13px;margin-top:4px;">ETF별 자금유입·순자산증감·수익률·투자자 수급으로 보는 섹터 자금 이동</p>
     </div>
     <div class="header-meta">
+      <span id="data-source-badge" style="font-size:11px;color:var(--text-dim);padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.05);">내장 데이터</span>
       <span class="date-badge" id="current-date">2026.06.04 (목)</span>
       <span class="market-badge kospi">KOSPI 8,639 ▼1.84%</span>
       <span class="market-badge kosdaq" style="background:rgba(45,212,160,0.15);color:var(--green);">KOSDAQ 1,049 ▲2.28%</span>
@@ -972,6 +973,101 @@ const SECTORS = {
   'other':     { label: '기타/혼합',      color: '#94a3b8' },
 };
 
+// ═══════════════════════════════════════════
+// DYNAMIC DATA LOADING
+// ═══════════════════════════════════════════
+
+const SECTOR_KEY_MAP = {
+  "시장대표": "market",
+  "반도체/HBM/AI": "semi",
+  "AI전력/변압기": "ai-power",
+  "2차전지/배터리": "battery",
+  "바이오/헬스케어": "bio",
+  "조선/방산/우주": "defense",
+  "자동차/로봇": "auto",
+  "금융/보험/증권": "finance",
+  "배당/밸류업": "dividend",
+  "소비재/화장품": "consumer",
+  "원전/신재생": "energy",
+  "레버리지/인버스": "leverage",
+  "기타/혼합": "other",
+};
+
+function extractMgr(name) {
+  if (name.startsWith('KODEX') || name.startsWith('삼성')) return '삼성';
+  if (name.startsWith('TIGER')) return '미래에셋';
+  if (name.startsWith('SOL')) return '신한';
+  if (name.startsWith('ACE') || name.startsWith('한국투자')) return '한투';
+  if (name.startsWith('RISE') || name.startsWith('KB')) return 'KB';
+  if (name.startsWith('HANARO')) return 'NH-A';
+  if (name.startsWith('PLUS') || name.startsWith('한화')) return '한화';
+  if (name.startsWith('KoAct')) return '삼성(액티브)';
+  if (name.startsWith('TIMEFOLIO')) return '타임폴리오';
+  return '기타';
+}
+
+function transformApiData(apiData) {
+  if (!apiData || !apiData.etfs) return null;
+
+  const etfs = apiData.etfs.map(e => {
+    const sectorKey = SECTOR_KEY_MAP[e.sector] || 'other';
+    return {
+      name: e.name,
+      mgr: extractMgr(e.name),
+      sector: sectorKey,
+      aum: e.aum || 0,
+      flow: e.flowEstimate || 0,
+      aumChg: '',
+      ret1d: e.ret1d,
+      ret1w: e.ret1w,
+      ret1m: e.ret1m,
+      ytd: null,
+      volume: e.tradeVal || 0,
+      interp: '',
+      holdings: [],
+      individual: e.individual || 0,
+      foreign: e.foreign || 0,
+      institutional: e.institutional || 0,
+      finInvest: e.finInvest || 0,
+    };
+  });
+
+  return { etfs, meta: apiData.meta, market: apiData.market, sectors: apiData.sectors };
+}
+
+async function loadLiveData() {
+  try {
+    const resp = await fetch('data/latest.json');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    console.log(`✅ 라이브 데이터 로드: ${data.meta?.date} (${data.meta?.filteredCount}개 ETF)`);
+    return data;
+  } catch (err) {
+    console.warn('⚠️ 라이브 데이터 없음, 내장 데이터 사용:', err.message);
+    return null;
+  }
+}
+
+async function loadArchiveData(dateStr) {
+  try {
+    const resp = await fetch(`data/${dateStr}.json`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    console.warn(`아카이브 ${dateStr} 로드 실패:`, err.message);
+    return null;
+  }
+}
+
+async function loadArchiveIndex() {
+  try {
+    const resp = await fetch('data/index.json');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } catch { return { dates: [] }; }
+}
+
+// FALLBACK: 내장 데이터 (라이브 데이터 없을 때 사용)
 const ETF_DATA = [
   { name:'SOL AI반도체TOP2플러스', mgr:'신한', sector:'semi', aum:40000, flow:5790, aumChg:'+15000(2주)', ret1d:null, ret1w:null, ret1m:75.55, ytd:null, volume:8000, interp:'자금유입+가격상승 동반. 시장 1위 자금 블랙홀. 실제 신규자금 대규모 유입.', holdings:[{n:'SK하이닉스',p:26.5},{n:'삼성전기',p:23.3},{n:'삼성전자',p:17.8},{n:'SK스퀘어',p:16.2},{n:'한미반도체',p:5.0}] },
   { name:'TIGER SK하이닉스단일종목레버리지', mgr:'미래에셋', sector:'leverage', aum:20000, flow:3218, aumChg:'+신규상장', ret1d:null, ret1w:28, ret1m:null, ytd:null, volume:37000, interp:'5/27 상장 후 4일 거래대금 27.8조원. 투기적 단기매매 집중.', holdings:[{n:'SK하이닉스(2배)',p:100},{n:'',p:0},{n:'',p:0},{n:'',p:0},{n:'',p:0}] },
@@ -1028,8 +1124,32 @@ const WEEKLY_FLOW_DATA = {
 // ═══════════════════════════════════════════
 
 let activeSectorFilter = null;
+let ACTIVE_DATA = ETF_DATA; // 현재 표시중인 데이터 (라이브 or 내장)
+let LIVE_META = null;
+let LIVE_MARKET = null;
+let LIVE_SECTORS = null;
 
-function init() {
+async function init() {
+  // 라이브 데이터 시도
+  const liveData = await loadLiveData();
+  if (liveData) {
+    const transformed = transformApiData(liveData);
+    if (transformed && transformed.etfs.length > 0) {
+      ACTIVE_DATA = transformed.etfs;
+      LIVE_META = transformed.meta;
+      LIVE_MARKET = transformed.market;
+      LIVE_SECTORS = transformed.sectors;
+      updateHeaderFromLive(liveData);
+      updateSummaryFromLive(liveData);
+      document.getElementById('data-source-badge').textContent = `KRX 실시간 (${LIVE_META.dateFormatted})`;
+      document.getElementById('data-source-badge').style.color = 'var(--green)';
+    }
+  }
+
+  // 아카이브 인덱스 로드
+  const archiveIdx = await loadArchiveIndex();
+  updateArchiveSelectFromIndex(archiveIdx);
+
   renderSectorLegend();
   renderMainTable();
   renderSectorFlowGrid();
@@ -1038,6 +1158,55 @@ function init() {
   renderSemiTable();
   renderFinalSummary();
   initCharts();
+}
+
+function updateHeaderFromLive(data) {
+  if (!data.meta) return;
+  document.getElementById('current-date').textContent = data.meta.dateFormatted;
+}
+
+function updateSummaryFromLive(data) {
+  if (!data.market) return;
+  const m = data.market;
+  // 투자자 수급 카드 업데이트
+  const cards = document.querySelectorAll('.summary-card');
+  if (m.totalForeign != null && cards.length >= 3) {
+    const foreignVal = m.totalForeign;
+    const foreignCard = cards[2];
+    const valEl = foreignCard.querySelector('.value');
+    if (valEl) {
+      const trillions = (foreignVal / 10000).toFixed(2);
+      valEl.textContent = `${foreignVal >= 0 ? '+' : ''}${trillions}조`;
+    }
+  }
+}
+
+function updateArchiveSelectFromIndex(idx) {
+  const sel = document.getElementById('archive-select');
+  if (!idx.dates || idx.dates.length === 0) return;
+  sel.innerHTML = idx.dates.map((d, i) => {
+    const formatted = `${d.slice(0,4)}.${d.slice(4,6)}.${d.slice(6,8)}`;
+    return `<option value="${d}" ${i===0?'selected':''}>${formatted}${i===0?' (최신)':''}</option>`;
+  }).join('');
+  sel.onchange = async function() {
+    const dateStr = this.value;
+    const archiveData = await loadArchiveData(dateStr);
+    if (archiveData) {
+      const transformed = transformApiData(archiveData);
+      if (transformed && transformed.etfs.length > 0) {
+        ACTIVE_DATA = transformed.etfs;
+        LIVE_META = transformed.meta;
+        LIVE_MARKET = transformed.market;
+        updateHeaderFromLive(archiveData);
+        renderMainTable();
+        renderSectorFlowGrid();
+        renderDivergence();
+        renderPowerTable();
+        renderSemiTable();
+        initCharts();
+      }
+    }
+  };
 }
 
 function renderSectorLegend() {
@@ -1086,7 +1255,7 @@ function retCell(val) {
 }
 
 function holdingsTooltip(etf) {
-  if (!etf.holdings || !etf.holdings[0].n) return '';
+  if (!etf.holdings || etf.holdings.length === 0 || !etf.holdings[0].n) return '';
   const sec = SECTORS[etf.sector] || SECTORS.other;
   const rows = etf.holdings.filter(h => h.n).map(h =>
     `<div class="holding-row">
@@ -1103,7 +1272,7 @@ function holdingsTooltip(etf) {
 
 function renderMainTable() {
   const tbody = document.getElementById('main-tbody');
-  let data = ETF_DATA;
+  let data = ACTIVE_DATA;
   if (activeSectorFilter) data = data.filter(d => d.sector === activeSectorFilter);
 
   tbody.innerHTML = data.map(e => {
@@ -1128,7 +1297,7 @@ function renderMainTable() {
 function renderSectorFlowGrid() {
   const grid = document.getElementById('sector-flow-grid');
   const sectorFlows = {};
-  ETF_DATA.forEach(e => {
+  ACTIVE_DATA.forEach(e => {
     if (!sectorFlows[e.sector]) sectorFlows[e.sector] = 0;
     sectorFlows[e.sector] += (e.flow || 0);
   });
@@ -1140,7 +1309,7 @@ function renderSectorFlowGrid() {
     const sign = flow >= 0 ? '+' : '';
     const bg = flow >= 0 ? 'rgba(255,77,106,0.08)' : 'rgba(77,163,255,0.08)';
     const indColor = flow >= 0 ? '#2dd4a0' : '#ff4d6a';
-    const count = ETF_DATA.filter(e => e.sector === s).length;
+    const count = ACTIVE_DATA.filter(e => e.sector === s).length;
     return `<div class="sector-flow-card" style="background:${bg};">
       <div class="sector-indicator" style="background:${sec.color};"></div>
       <div class="sector-name" style="color:${sec.color};padding-left:8px;">${sec.label}</div>
@@ -1152,7 +1321,7 @@ function renderSectorFlowGrid() {
 
 function renderDivergence() {
   // Price up, flow down
-  const upDown = ETF_DATA.filter(e => (e.flow||0) < -500 && (e.aumChg||'').includes('+'));
+  const upDown = ACTIVE_DATA.filter(e => (e.flow||0) < -500 && (e.aumChg||'').includes('+'));
   const el1 = document.getElementById('div-price-up-flow-down');
   el1.innerHTML = [
     {name:'KODEX 레버리지', price:'순자산 +2.4조(가격상승)', flow:'-1.4조 순매도(개인)', why:'단일종목 레버리지 출시 → 구조적 교체'},
@@ -1185,7 +1354,7 @@ function renderDivergence() {
 
 function renderPowerTable() {
   const tbody = document.getElementById('power-tbody');
-  const powerEtfs = ETF_DATA.filter(e => e.sector === 'ai-power');
+  const powerEtfs = ACTIVE_DATA.filter(e => e.sector === 'ai-power');
   tbody.innerHTML = powerEtfs.map(e =>
     `<tr>
       <td class="tooltip-trigger" style="font-weight:600;color:var(--sector-ai-power);">${e.name}${holdingsTooltip(e)}</td>
@@ -1202,7 +1371,7 @@ function renderPowerTable() {
 
 function renderSemiTable() {
   const tbody = document.getElementById('semi-tbody');
-  const semiEtfs = ETF_DATA.filter(e => e.sector === 'semi' || (e.sector === 'leverage' && e.name.includes('하이닉스')));
+  const semiEtfs = ACTIVE_DATA.filter(e => e.sector === 'semi' || (e.sector === 'leverage' && e.name.includes('하이닉스')));
   tbody.innerHTML = semiEtfs.map(e => {
     const flowDir = (e.flow||0) >= 0 ? '📥 유입' : '📤 유출';
     const flowColor = (e.flow||0) >= 0 ? 'var(--green)' : 'var(--up)';
@@ -1346,7 +1515,7 @@ function createWeeklyFlowChart(mode) {
 
 function createTopFlowBarChart() {
   const ctx = document.getElementById('topFlowBarChart').getContext('2d');
-  const sorted = [...ETF_DATA].sort((a,b) => (b.flow||0) - (a.flow||0));
+  const sorted = [...ACTIVE_DATA].sort((a,b) => (b.flow||0) - (a.flow||0));
   const top = sorted.slice(0, 8);
   const bottom = sorted.slice(-5).reverse();
   const items = [...top, ...bottom];
@@ -1395,7 +1564,7 @@ function createTopFlowBarChart() {
 
 function createScatterChart() {
   const ctx = document.getElementById('scatterChart').getContext('2d');
-  const points = ETF_DATA.filter(e => e.ret1d != null && e.flow != null).map(e => ({
+  const points = ACTIVE_DATA.filter(e => e.ret1d != null && e.flow != null).map(e => ({
     x: e.flow,
     y: e.ret1d,
     label: e.name,
@@ -1430,7 +1599,7 @@ function createScatterChart() {
             label: ctx => {
               const ds = ctx.dataset;
               const idx = ctx.dataIndex;
-              const filtered = ETF_DATA.filter(e => e.sector === Object.keys(sectorGroups)[ctx.datasetIndex]);
+              const filtered = ACTIVE_DATA.filter(e => e.sector === Object.keys(sectorGroups)[ctx.datasetIndex]);
               const etf = filtered[idx];
               return etf ? `${etf.name}: 유입 ${ctx.parsed.x.toLocaleString()}억, 수익률 ${ctx.parsed.y.toFixed(2)}%` : '';
             }
@@ -1456,7 +1625,7 @@ function createScatterChart() {
 function createSectorWaterfallChart() {
   const ctx = document.getElementById('sectorWaterfallChart').getContext('2d');
   const sectorFlows = {};
-  ETF_DATA.forEach(e => {
+  ACTIVE_DATA.forEach(e => {
     if (!sectorFlows[e.sector]) sectorFlows[e.sector] = 0;
     sectorFlows[e.sector] += (e.flow || 0);
   });
@@ -1529,7 +1698,7 @@ function createInvestorChart() {
 
 function createSemiFlowChart() {
   const ctx = document.getElementById('semiFlowChart').getContext('2d');
-  const semiEtfs = ETF_DATA.filter(e => e.sector === 'semi' || (e.sector === 'leverage' && e.name.includes('하이닉스')));
+  const semiEtfs = ACTIVE_DATA.filter(e => e.sector === 'semi' || (e.sector === 'leverage' && e.name.includes('하이닉스')));
   const sorted = semiEtfs.sort((a,b) => (b.flow||0) - (a.flow||0));
 
   semiChart = new Chart(ctx, {
@@ -1599,7 +1768,7 @@ function sortTable(col) {
   else { sortCol = col; sortDir = -1; }
   const keys = ['name','mgr','sector','aum','flow','aumChg','ret1d','ret1w','ret1m','ytd','volume','interp'];
   const key = keys[col];
-  ETF_DATA.sort((a,b) => {
+  ACTIVE_DATA.sort((a,b) => {
     let va = a[key], vb = b[key];
     if (va == null) va = -Infinity;
     if (vb == null) vb = -Infinity;
@@ -1619,7 +1788,7 @@ function saveArchive() {
     date: date,
     timestamp: new Date().toISOString(),
     market: { kospi: 8639, kosdaq: 1049 },
-    etfData: ETF_DATA,
+    etfData: ACTIVE_DATA,
     weeklyFlow: WEEKLY_FLOW_DATA,
   };
   const key = `etf_archive_${date}`;
@@ -1652,7 +1821,7 @@ function showArchiveList() {
 
 function exportData() {
   let csv = 'ETF명,운용사,섹터,순자산(억),자금유입(억),1일수익률,1주수익률,1개월수익률,YTD,거래대금(억)\n';
-  ETF_DATA.forEach(e => {
+  ACTIVE_DATA.forEach(e => {
     csv += `"${e.name}",${e.mgr},${SECTORS[e.sector]?.label||''},${e.aum||''},${e.flow||''},${e.ret1d||''},${e.ret1w||''},${e.ret1m||''},${e.ytd||''},${e.volume||''}\n`;
   });
   const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});

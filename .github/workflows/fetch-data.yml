@@ -1,0 +1,68 @@
+name: Fetch ETF Data
+
+on:
+  schedule:
+    # 매일 09:10 UTC = 18:10 KST (장 마감 후)
+    - cron: '10 9 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '수집 날짜 (YYYYMMDD, 비우면 오늘)'
+        required: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Fetch ETF data from KRX
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python scripts/fetch_etf_data.py "${{ github.event.inputs.date }}"
+          else
+            python scripts/fetch_etf_data.py
+          fi
+
+      - name: Commit and push data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No data changes to commit"
+          else
+            DATE=$(ls data/*.json | grep -v latest | grep -v index | sort -r | head -1 | sed 's/.*\///' | sed 's/.json//')
+            git commit -m "📊 ETF 수급 데이터 업데이트 ($DATE)"
+            git push
+          fi
+
+  deploy:
+    needs: fetch
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - run: git pull origin main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
