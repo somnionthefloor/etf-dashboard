@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import requests
 
+import re
+
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
 SECTOR_KEYWORDS = {
@@ -94,9 +96,55 @@ def fetch_investor_data_krx(date_str):
     return []
 
 
+def fetch_investor_from_naver(code):
+    """Naver 외국인/기관 매매동향 페이지에서 최신일 순매수 주수 추출"""
+    try:
+        r = requests.get(
+            f"https://finance.naver.com/item/frgn.naver?code={code}",
+            headers=HEADERS, timeout=8,
+        )
+        tds = re.findall(r"<td[^>]*>(.*?)</td>", r.text, re.DOTALL)
+        for i, td in enumerate(tds):
+            if re.search(r"\d{4}\.\d{2}\.\d{2}", td) and i + 8 < len(tds):
+                vals = [re.sub(r"<[^>]+>", "", tds[j]).strip() for j in range(i, i + 9)]
+                def parse_int(s):
+                    s = s.replace(",", "").replace("+", "")
+                    return int(s) if s.lstrip("-").isdigit() else 0
+                return {
+                    "date": vals[0],
+                    "inst_shares": parse_int(vals[5]),
+                    "frgn_shares": parse_int(vals[6]),
+                }
+    except Exception:
+        pass
+    return None
+
+
+def fetch_investor_batch(etf_items, max_count=120):
+    """상위 ETF들의 기관/외국인 순매수 일괄 수집"""
+    print(f"[3/4] 상위 {max_count}개 ETF 투자자별 순매수 수집 (Naver 스크래핑)...")
+    result = {}
+    for i, item in enumerate(etf_items[:max_count]):
+        code = item["itemcode"]
+        inv = fetch_investor_from_naver(code)
+        if inv:
+            close_price = item.get("nowVal", 0) or 1
+            result[code] = {
+                "inst_amt": round(inv["inst_shares"] * close_price / 100000000, 1),
+                "frgn_amt": round(inv["frgn_shares"] * close_price / 100000000, 1),
+                "inst_shares": inv["inst_shares"],
+                "frgn_shares": inv["frgn_shares"],
+            }
+        if (i + 1) % 20 == 0:
+            print(f"  → {i+1}/{max_count} 완료")
+        time.sleep(0.2)
+    print(f"  → {len(result)}개 ETF 투자자 데이터 수집 완료")
+    return result
+
+
 def fetch_top_holdings(codes, max_count=50):
     """상위 ETF의 구성종목 수집 (Naver API 가용 시)"""
-    print(f"[3/3] 구성종목 수집 스킵 (API 제한)")
+    print(f"[4/4] 구성종목 수집 스킵 (API 제한)")
     return {code: [] for code in codes[:max_count]}
 
 
@@ -106,14 +154,11 @@ def build_dataset(date_str):
     naver_items = fetch_naver_etf_list()
     time.sleep(1)
 
-    # 2. 투자자별 매매동향 (KRX)
-    investor_data = fetch_investor_data_krx(date_str)
-    inv_map = {}
-    for item in investor_data:
-        code = item.get("ISU_SRT_CD", "")
-        inv_map[code] = item
+    # 2. 투자자별 순매수 (Naver 스크래핑)
+    inv_map = fetch_investor_batch(naver_items, max_count=120)
+    time.sleep(1)
 
-    # 3. 구성종목 (상위 ETF만)
+    # 3. 구성종목 (상위 ETF만 - 현재 스킵)
     top_codes = [item["itemcode"] for item in naver_items[:80]]
     holdings_map = fetch_top_holdings(top_codes)
 
@@ -132,15 +177,15 @@ def build_dataset(date_str):
         trade_val_billion = round(trade_val / 100, 1) if trade_val else 0
         close_price = item.get("nowVal", 0) or 0
 
-        # 투자자별 순매수 (있으면)
+        # 투자자별 순매수 (Naver 스크래핑 - 기관/외국인만)
         inv = inv_map.get(code, {})
-        individual = round(float(inv.get("INDV_NETBID_AMT", 0) or 0) / 100000000, 1)
-        foreign = round(float(inv.get("FRGN_NETBID_AMT", 0) or 0) / 100000000, 1)
-        institutional = round(float(inv.get("INST_NETBID_AMT", 0) or 0) / 100000000, 1)
-        fin_invest = round(float(inv.get("FINIVST_NETBID_AMT", 0) or 0) / 100000000, 1)
+        institutional = inv.get("inst_amt", 0)
+        foreign = inv.get("frgn_amt", 0)
+        individual = 0  # Naver에서 개인은 직접 제공 안 함
+        fin_invest = 0
 
-        # 자금유입 추정 = 투자자 순매수 합계 (proxy)
-        flow_estimate = round(individual + foreign + institutional + fin_invest, 1)
+        # 자금유입 추정 = 기관 + 외국인 순매수 합계 (proxy)
+        flow_estimate = round(institutional + foreign, 1)
 
         # 구성종목
         holdings = holdings_map.get(code, [])
