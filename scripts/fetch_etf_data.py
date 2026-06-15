@@ -120,10 +120,40 @@ def fetch_investor_from_naver(code):
     return None
 
 
+def detect_latest_trade_date():
+    """Naver에서 KODEX 200의 최신 거래일을 감지"""
+    inv = fetch_investor_from_naver("069500")
+    if inv and inv.get("date"):
+        raw = inv["date"].replace(".", "")
+        print(f"  → 최신 거래일 감지: {inv['date']}")
+        return raw
+    return None
+
+
+def detect_price_date():
+    """Naver 시세 API에서 실제 데이터 날짜 감지 (KODEX 200 일별 시세)"""
+    try:
+        r = requests.get(
+            "https://api.finance.naver.com/siseJson.naver",
+            params={"symbol": "069500", "requestType": 1, "startTime": "20260101",
+                    "endTime": "20261231", "timeframe": "day"},
+            headers=HEADERS, timeout=10,
+        )
+        dates = re.findall(r'"(\d{8})"', r.text)
+        if dates:
+            latest = dates[-1]
+            print(f"  → 시세 최신 거래일 감지: {latest}")
+            return latest
+    except Exception:
+        pass
+    return None
+
+
 def fetch_investor_batch(etf_items, max_count=120):
     """상위 ETF들의 기관/외국인 순매수 일괄 수집"""
     print(f"[3/4] 상위 {max_count}개 ETF 투자자별 순매수 수집 (Naver 스크래핑)...")
     result = {}
+    detected_date = None
     for i, item in enumerate(etf_items[:max_count]):
         code = item["itemcode"]
         inv = fetch_investor_from_naver(code)
@@ -135,11 +165,13 @@ def fetch_investor_batch(etf_items, max_count=120):
                 "inst_shares": inv["inst_shares"],
                 "frgn_shares": inv["frgn_shares"],
             }
+            if detected_date is None and inv.get("date"):
+                detected_date = inv["date"].replace(".", "")
         if (i + 1) % 20 == 0:
             print(f"  → {i+1}/{max_count} 완료")
         time.sleep(0.2)
     print(f"  → {len(result)}개 ETF 투자자 데이터 수집 완료")
-    return result
+    return result, detected_date
 
 
 def fetch_top_holdings(codes, max_count=50):
@@ -149,14 +181,24 @@ def fetch_top_holdings(codes, max_count=50):
 
 
 def build_dataset(date_str):
-    """전체 데이터셋 빌드"""
+    """전체 데이터셋 빌드. 실제 데이터 날짜를 감지하여 반환."""
     # 1. Naver ETF 시세
     naver_items = fetch_naver_etf_list()
     time.sleep(1)
 
+    # 1.5. 실제 시세 날짜 감지
+    price_date = detect_price_date()
+    time.sleep(0.5)
+
     # 2. 투자자별 순매수 (Naver 스크래핑)
-    inv_map = fetch_investor_batch(naver_items, max_count=120)
+    inv_map, investor_date = fetch_investor_batch(naver_items, max_count=120)
     time.sleep(1)
+
+    # 실제 데이터 날짜 결정 (투자자 데이터 날짜 > 시세 날짜 > 입력 날짜)
+    actual_date = investor_date or price_date or date_str
+    if actual_date != date_str:
+        print(f"\n⚠️  입력 날짜({date_str}) ≠ 실제 데이터 날짜({actual_date}) → 실제 날짜로 저장")
+        date_str = actual_date
 
     # 3. 구성종목 (상위 ETF만 - 현재 스킵)
     top_codes = [item["itemcode"] for item in naver_items[:80]]
@@ -217,7 +259,7 @@ def build_dataset(date_str):
     etf_list.sort(key=lambda x: abs(x.get("aum") or 0), reverse=True)
 
     print(f"\n필터링 후 ETF 수: {len(etf_list)}")
-    return etf_list
+    return etf_list, date_str
 
 
 def build_sector_summary(etf_list):
@@ -278,16 +320,22 @@ def main():
             now -= timedelta(days=2)
         date_str = now.strftime("%Y%m%d")
 
-    print(f"=== ETF 수급 데이터 수집 시작 ({date_str}) ===\n")
+    print(f"=== ETF 수급 데이터 수집 시작 (입력: {date_str}) ===\n")
 
-    etf_list = build_dataset(date_str)
+    etf_list, actual_date = build_dataset(date_str)
+    date_str = actual_date  # 실제 데이터 날짜 사용
     sector_summary = build_sector_summary(etf_list)
     market_summary = build_market_summary(etf_list, date_str)
+
+    weekday_kr = ["월", "화", "수", "목", "금", "토", "일"]
+    dt = datetime.strptime(date_str, "%Y%m%d")
+    day_name = weekday_kr[dt.weekday()]
+    formatted = f"{date_str[:4]}.{date_str[4:6]}.{date_str[6:8]} ({day_name})"
 
     result = {
         "meta": {
             "date": date_str,
-            "dateFormatted": f"{date_str[:4]}.{date_str[4:6]}.{date_str[6:8]}",
+            "dateFormatted": formatted,
             "fetchedAt": datetime.now().isoformat(),
             "filteredCount": len(etf_list),
         },
